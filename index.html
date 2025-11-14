@@ -29,10 +29,28 @@
     .subtitle {
       font-size: 13px;
       color: #666666;
-      margin-bottom: 18px;
+      margin-bottom: 10px;
+    }
+    .password-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .password-toggle button {
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 999px;
+      border: 1px solid #d0d0d0;
+      background: #fafafa;
+      cursor: pointer;
+    }
+    .password-toggle button:hover {
+      background: #e8f0fe;
     }
     .search-bar {
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
     .search-bar input {
       width: 100%;
@@ -45,6 +63,28 @@
     .search-bar input:focus {
       border-color: #4285f4;
       box-shadow: 0 0 0 2px rgba(66,133,244,0.15);
+    }
+    .alpha-filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+    .alpha-btn {
+      border: 1px solid #dddddd;
+      background: #fafafa;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .alpha-btn:hover {
+      background: #e8f0fe;
+    }
+    .alpha-btn.active {
+      background: #1a73e8;
+      color: #ffffff;
+      border-color: #1a73e8;
     }
     .table-wrapper {
       max-height: 480px;
@@ -60,6 +100,7 @@
       padding: 8px 10px;
       font-size: 13px;
       text-align: left;
+      vertical-align: top;
     }
     th {
       background: #fafafa;
@@ -97,7 +138,6 @@
     .type-pill.empresa {
       background: #e6f4ea;
     }
-
     .email-link, .phone-link {
       text-decoration: none;
       color: #1a73e8;
@@ -112,28 +152,46 @@
       font-size: 12px;
       color: #777777;
     }
+    .cred-entry {
+      font-size: 11px;
+      line-height: 1.3;
+    }
+    .cred-entry + .cred-entry {
+      margin-top: 2px;
+    }
+    .password-text {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Directorio de contactos</h1>
     <div class="subtitle">
-      Usa el buscador para filtrar por nombre, teléfono, correo, plataforma, dirección o notas.
+      Usa el buscador para filtrar por cualquier campo. El filtro alfabético toma la inicial del Nombre (o Razón social si el nombre está vacío).
+    </div>
+
+    <div class="password-toggle">
+      <span id="password-status">Contraseñas ocultas. Esta protección es solo visual, no segura para datos sensibles.</span>
+      <button id="password-toggle-btn" type="button">Desbloquear</button>
     </div>
 
     <div class="search-bar">
       <input id="search" type="text" placeholder="Buscar...">
     </div>
 
+    <div id="alpha-filter" class="alpha-filter"></div>
+
     <div class="table-wrapper">
       <table>
         <thead>
           <tr>
             <th>Nombre</th>
+            <th>Razón social</th>
             <th>Tipo</th>
             <th>Teléfono</th>
             <th>Correo</th>
-            <th>Plataformas</th>
+            <th>Credenciales</th>
             <th>Dirección</th>
             <th>Notas</th>
           </tr>
@@ -145,17 +203,25 @@
     <div id="estado" class="status"></div>
   </div>
 
-  <!-- PapaParse: librería para leer CSV de forma robusta -->
+  <!-- PapaParse: librería para leer CSV -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
   <script>
     // 1) Pega aquí la URL CSV de tu Google Sheet
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/1T3jxg376sNzDJ1IRGRwtowGmmfenfqXPtHrIqEltB1c/export?format=csv&id=1T3jxg376sNzDJ1IRGRwtowGmmfenfqXPtHrIqEltB1c&gid=0';
 
+    // 2) Contraseña maestra para mostrar contraseñas (NO es segura, solo visual)
+    const MASTER_PASSWORD = '7540';
+
     let contactos = [];
     let searchInput;
     let tbody;
     let estado;
+    let letterFilter = '';
+    let masterUnlocked = false;
+    let alphaContainer;
+    let passwordStatus;
+    let passwordToggleBtn;
 
     function normalizar(texto) {
       return (texto || '')
@@ -165,13 +231,30 @@
         .replace(/[\u0300-\u036f]/g, '');
     }
 
+    function parseListaCampo(campo) {
+      if (!campo) return [];
+      return campo
+        .toString()
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    function inicialDe(item) {
+      const base = (item.nombre || item.razonSocial || '').trim();
+      if (!base) return '';
+      const ch = base[0].toUpperCase();
+      if (ch >= 'A' && ch <= 'Z') return ch;
+      return '#';
+    }
+
     function render(lista) {
       tbody.innerHTML = '';
 
       if (!Array.isArray(lista) || lista.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 7;
+        td.colSpan = 8;
         td.className = 'empty-row';
         td.textContent = 'No hay resultados para tu búsqueda.';
         tr.appendChild(td);
@@ -186,15 +269,17 @@
         const tdNombre = document.createElement('td');
         tdNombre.textContent = item.nombre || '';
 
+        const tdRazon = document.createElement('td');
+        tdRazon.textContent = item.razonSocial || '';
+
         const tdTipo = document.createElement('td');
         if (item.tipo) {
-        const span = document.createElement('span');
-        // clase base + clase según el texto (persona / empresa)
-        span.className = 'type-pill ' + normalizar(item.tipo);
-        span.textContent = item.tipo;
-        tdTipo.appendChild(span);
+          const span = document.createElement('span');
+          span.className = 'type-pill ' + normalizar(item.tipo);
+          span.textContent = item.tipo;
+          tdTipo.appendChild(span);
         }
-        
+
         const tdTel = document.createElement('td');
         if (item.telefono) {
           const a = document.createElement('a');
@@ -213,19 +298,45 @@
           tdCorreo.appendChild(a);
         }
 
-        const tdPlataformas = document.createElement('td');
-        if (item.plataformas) {
-          item.plataformas
-            .toString()
-            .split(',')
-            .map(s => s.trim())
-            .filter(Boolean)
-            .forEach(function(p) {
-              const span = document.createElement('span');
-              span.className = 'tag';
-              span.textContent = p;
-              tdPlataformas.appendChild(span);
-            });
+        const tdCred = document.createElement('td');
+        const plataformas = parseListaCampo(item.plataformas);
+        const usuarios = parseListaCampo(item.usuarios);
+        const contrasenas = parseListaCampo(item.contrasenas);
+
+        const maxLen = Math.max(plataformas.length, usuarios.length, contrasenas.length);
+
+        if (maxLen === 0) {
+          tdCred.textContent = '';
+        } else {
+          for (let i = 0; i < maxLen; i++) {
+            const div = document.createElement('div');
+            div.className = 'cred-entry';
+            const partes = [];
+
+            const pl = plataformas[i] || '';
+            const us = usuarios[i] || '';
+            const pw = contrasenas[i] || '';
+
+            if (pl) partes.push(pl);
+            if (us) partes.push(us);
+
+            const spanTexto = document.createElement('span');
+            spanTexto.textContent = partes.join(' · ');
+            div.appendChild(spanTexto);
+
+            if (pw) {
+              const sep = document.createElement('span');
+              sep.textContent = ' • ';
+              div.appendChild(sep);
+
+              const spanPw = document.createElement('span');
+              spanPw.className = 'password-text';
+              spanPw.textContent = masterUnlocked ? pw : '••••••••';
+              div.appendChild(spanPw);
+            }
+
+            tdCred.appendChild(div);
+          }
         }
 
         const tdDireccion = document.createElement('td');
@@ -235,10 +346,11 @@
         tdNotas.textContent = item.notas || '';
 
         tr.appendChild(tdNombre);
+        tr.appendChild(tdRazon);
         tr.appendChild(tdTipo);
         tr.appendChild(tdTel);
         tr.appendChild(tdCorreo);
-        tr.appendChild(tdPlataformas);
+        tr.appendChild(tdCred);
         tr.appendChild(tdDireccion);
         tr.appendChild(tdNotas);
 
@@ -250,25 +362,32 @@
 
     function filtrar() {
       const q = normalizar(searchInput.value);
+      let lista = contactos.slice();
 
-      if (!q) {
-        render(contactos);
-        return;
+      if (q) {
+        lista = lista.filter(function(item) {
+          return (
+            normalizar(item.nombre).includes(q) ||
+            normalizar(item.razonSocial).includes(q) ||
+            normalizar(item.tipo).includes(q) ||
+            normalizar(item.telefono).includes(q) ||
+            normalizar(item.correo).includes(q) ||
+            normalizar(item.plataformas).includes(q) ||
+            normalizar(item.usuarios).includes(q) ||
+            normalizar(item.contrasenas).includes(q) ||
+            normalizar(item.direccion).includes(q) ||
+            normalizar(item.notas).includes(q)
+          );
+        });
       }
 
-      const filtrados = contactos.filter(function(item) {
-        return (
-          normalizar(item.nombre).includes(q) ||
-          normalizar(item.tipo).includes(q) ||
-          normalizar(item.telefono).includes(q) ||
-          normalizar(item.correo).includes(q) ||
-          normalizar(item.plataformas).includes(q) ||
-          normalizar(item.direccion).includes(q) ||
-          normalizar(item.notas).includes(q)
-        );
-      });
+      if (letterFilter) {
+        lista = lista.filter(function(item) {
+          return inicialDe(item) === letterFilter;
+        });
+      }
 
-      render(filtrados);
+      render(lista);
     }
 
     function cargarDatos() {
@@ -294,16 +413,28 @@
           contactos = resultado.data.map(function(row) {
             return {
               nombre: row.Nombre || '',
+              razonSocial: row.RazonSocial || '',
               tipo: row.Tipo || '',
               telefono: row.Telefono || '',
               correo: row.Correo || '',
               plataformas: row.Plataformas || '',
+              usuarios: row.Usuarios || '',
+              contrasenas: row.Contrasenas || '',
               direccion: row.Direccion || '',
               notas: row.Notas || ''
             };
           });
 
-          render(contactos);
+          // Orden alfabético por Nombre / Razón social
+          contactos.sort(function(a, b) {
+            const keyA = normalizar(a.nombre || a.razonSocial);
+            const keyB = normalizar(b.nombre || b.razonSocial);
+            if (keyA < keyB) return -1;
+            if (keyA > keyB) return 1;
+            return 0;
+          });
+
+          filtrar();
         })
         .catch(function(err) {
           console.error(err);
@@ -311,13 +442,74 @@
         });
     }
 
+    function inicializarFiltroAlfa() {
+      const letras = ['Todos'];
+      for (let i = 0; i < 26; i++) {
+        letras.push(String.fromCharCode(65 + i));
+      }
+
+      letras.forEach(function(lbl) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'alpha-btn';
+        btn.textContent = lbl;
+        btn.dataset.letter = (lbl === 'Todos') ? '' : lbl;
+
+        if (lbl === 'Todos') {
+          btn.classList.add('active');
+        }
+
+        btn.addEventListener('click', function() {
+          letterFilter = btn.dataset.letter;
+          const todosBotones = alphaContainer.querySelectorAll('.alpha-btn');
+          todosBotones.forEach(function(b) {
+            b.classList.remove('active');
+          });
+          btn.classList.add('active');
+          filtrar();
+        });
+
+        alphaContainer.appendChild(btn);
+      });
+    }
+
+    function inicializarPasswordToggle() {
+      passwordToggleBtn.addEventListener('click', function() {
+        if (!masterUnlocked) {
+          const intento = prompt(
+            'Introduce la contraseña maestra para mostrar las contraseñas.\n' +
+            'AVISO: esta protección es solo visual. No es segura para información sensible.'
+          );
+          if (intento === null) return;
+          if (intento === MASTER_PASSWORD) {
+            masterUnlocked = true;
+            passwordStatus.textContent = 'Contraseñas visibles (protección solo visual, no segura).';
+            passwordToggleBtn.textContent = 'Ocultar';
+            filtrar();
+          } else {
+            alert('Contraseña incorrecta.');
+          }
+        } else {
+          masterUnlocked = false;
+          passwordStatus.textContent = 'Contraseñas ocultas. Esta protección es solo visual, no segura para datos sensibles.';
+          passwordToggleBtn.textContent = 'Desbloquear';
+          filtrar();
+        }
+      });
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
       searchInput = document.getElementById('search');
       tbody = document.getElementById('tabla-cuerpo');
       estado = document.getElementById('estado');
+      alphaContainer = document.getElementById('alpha-filter');
+      passwordStatus = document.getElementById('password-status');
+      passwordToggleBtn = document.getElementById('password-toggle-btn');
 
       searchInput.addEventListener('input', filtrar);
 
+      inicializarFiltroAlfa();
+      inicializarPasswordToggle();
       cargarDatos();
     });
   </script>
