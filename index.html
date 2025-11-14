@@ -83,6 +83,21 @@
       margin-right: 4px;
       margin-bottom: 2px;
     }
+    .type-pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #e0f2f1;
+      text-transform: capitalize;
+    }
+    .type-pill.persona {
+      background: #e8f0fe;
+    }
+    .type-pill.empresa {
+      background: #e6f4ea;
+    }
+
     .email-link, .phone-link {
       text-decoration: none;
       color: #1a73e8;
@@ -115,6 +130,7 @@
         <thead>
           <tr>
             <th>Nombre</th>
+            <th>Tipo</th>
             <th>Teléfono</th>
             <th>Correo</th>
             <th>Plataformas</th>
@@ -155,7 +171,7 @@
       if (!Array.isArray(lista) || lista.length === 0) {
         const tr = document.createElement('tr');
         const td = document.createElement('td');
-        td.colSpan = 6;
+        td.colSpan = 7;
         td.className = 'empty-row';
         td.textContent = 'No hay resultados para tu búsqueda.';
         tr.appendChild(td);
@@ -170,6 +186,15 @@
         const tdNombre = document.createElement('td');
         tdNombre.textContent = item.nombre || '';
 
+        const tdTipo = document.createElement('td');
+        if (item.tipo) {
+        const span = document.createElement('span');
+        // clase base + clase según el texto (persona / empresa)
+        span.className = 'type-pill ' + normalizar(item.tipo);
+        span.textContent = item.tipo;
+        tdTipo.appendChild(span);
+        }
+        
         const tdTel = document.createElement('td');
         if (item.telefono) {
           const a = document.createElement('a');
@@ -210,6 +235,7 @@
         tdNotas.textContent = item.notas || '';
 
         tr.appendChild(tdNombre);
+        tr.appendChild(tdTipo);
         tr.appendChild(tdTel);
         tr.appendChild(tdCorreo);
         tr.appendChild(tdPlataformas);
@@ -233,6 +259,7 @@
       const filtrados = contactos.filter(function(item) {
         return (
           normalizar(item.nombre).includes(q) ||
+          normalizar(item.tipo).includes(q) ||
           normalizar(item.telefono).includes(q) ||
           normalizar(item.correo).includes(q) ||
           normalizar(item.plataformas).includes(q) ||
@@ -267,6 +294,7 @@
           contactos = resultado.data.map(function(row) {
             return {
               nombre: row.Nombre || '',
+              tipo: row.Tipo || '',
               telefono: row.Telefono || '',
               correo: row.Correo || '',
               plataformas: row.Plataformas || '',
