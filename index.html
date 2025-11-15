@@ -282,7 +282,7 @@
       min-width: 68px;
     }
 
-    .meta-value, .meta-link {
+    .meta-link, .meta-value {
       font-size: 11px;
       color: #333333;
       text-decoration: none;
@@ -371,7 +371,7 @@
     <div class="controls">
       <div class="password-toggle">
         <span id="password-status">
-          Contraseñas ocultas. Esta protección es solo visual, no es segura para datos sensibles.
+          Contraseñas ocultas. Las contraseñas se almacenan cifradas; la clave maestra solo se usa en tu navegador.
         </span>
         <button id="password-toggle-btn" type="button">Desbloquear</button>
       </div>
@@ -388,15 +388,13 @@
     <div id="estado" class="status"></div>
   </div>
 
-  <!-- PapaParse: librería para leer CSV -->
+  <!-- Librerías: PapaParse (CSV) y CryptoJS (AES) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 
   <script>
     // 1) Pega aquí la URL CSV de tu Google Sheet
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/1T3jxg376sNzDJ1IRGRwtowGmmfenfqXPtHrIqEltB1c/export?format=csv&id=1T3jxg376sNzDJ1IRGRwtowGmmfenfqXPtHrIqEltB1c&gid=0';
-
-    // 2) Contraseña maestra para mostrar contraseñas (solo protección visual)
-    const MASTER_PASSWORD = '7540';
 
     let contactos = [];
     let searchInput;
@@ -404,6 +402,7 @@
     let estado;
     let letterFilter = '';
     let masterUnlocked = false;
+    let masterPassword = null;
     let alphaContainer;
     let passwordStatus;
     let passwordToggleBtn;
@@ -431,6 +430,23 @@
       const ch = base[0].toUpperCase();
       if (ch >= 'A' && ch <= 'Z') return ch;
       return '#';
+    }
+
+    function decryptPassword(cipher) {
+      if (!masterUnlocked || !masterPassword || !cipher) {
+        return '••••••••';
+      }
+      try {
+        const bytes = CryptoJS.AES.decrypt(cipher, masterPassword);
+        const plain = bytes.toString(CryptoJS.enc.Utf8);
+        if (!plain) {
+          return '***';
+        }
+        return plain;
+      } catch (e) {
+        console.error('Error al descifrar contraseña:', e);
+        return '***';
+      }
     }
 
     function render(lista) {
@@ -537,11 +553,11 @@
           inner.appendChild(meta);
         }
 
-        // Credenciales (plataforma, usuario, contraseña)
+        // Credenciales (plataforma, usuario, contraseña cifrada)
         const plataformas = parseListaCampo(item.plataformas);
         const usuarios = parseListaCampo(item.usuarios);
-        const contrasenas = parseListaCampo(item.contrasenas);
-        const maxLen = Math.max(plataformas.length, usuarios.length, contrasenas.length);
+        const cifradas = parseListaCampo(item.contrasenasCifradas);
+        const maxLen = Math.max(plataformas.length, usuarios.length, cifradas.length);
 
         if (maxLen > 0) {
           const credSection = document.createElement('div');
@@ -559,7 +575,7 @@
             const partes = [];
             const pl = plataformas[i] || '';
             const us = usuarios[i] || '';
-            const pw = contrasenas[i] || '';
+            const cipher = cifradas[i] || '';
 
             if (pl) partes.push(pl);
             if (us) partes.push(us);
@@ -568,14 +584,14 @@
             textoSpan.textContent = partes.join(' · ');
             div.appendChild(textoSpan);
 
-            if (pw) {
+            if (cipher) {
               const sep = document.createElement('span');
               sep.textContent = ' • ';
               div.appendChild(sep);
 
               const pwSpan = document.createElement('span');
               pwSpan.className = 'password-text';
-              pwSpan.textContent = masterUnlocked ? pw : '••••••••';
+              pwSpan.textContent = decryptPassword(cipher);
               div.appendChild(pwSpan);
             }
 
@@ -633,7 +649,6 @@
             normalizar(item.correo).includes(q) ||
             normalizar(item.plataformas).includes(q) ||
             normalizar(item.usuarios).includes(q) ||
-            normalizar(item.contrasenas).includes(q) ||
             normalizar(item.direccion).includes(q) ||
             normalizar(item.notas).includes(q)
           );
@@ -678,7 +693,7 @@
               correo: row.Correo || '',
               plataformas: row.Plataformas || '',
               usuarios: row.Usuarios || '',
-              contrasenas: row.Contrasenas || '',
+              contrasenasCifradas: row.ContrasenasCifradas || '',
               direccion: row.Direccion || '',
               notas: row.Notas || ''
             };
@@ -732,25 +747,48 @@
       });
     }
 
+    function probarMasterPassword(pass) {
+      // Busca la primera contraseña cifrada que haya en la lista
+      for (let i = 0; i < contactos.length; i++) {
+        const arr = parseListaCampo(contactos[i].contrasenasCifradas);
+        if (arr.length > 0) {
+          try {
+            const bytes = CryptoJS.AES.decrypt(arr[0], pass);
+            const plain = bytes.toString(CryptoJS.enc.Utf8);
+            // Si no devuelve texto legible, asumimos clave incorrecta
+            return !!plain;
+          } catch (e) {
+            return false;
+          }
+        }
+      }
+      // Si no hay ninguna contraseña cifrada aún, no hay forma de probar: aceptamos.
+      return true;
+    }
+
     function inicializarPasswordToggle() {
       passwordToggleBtn.addEventListener('click', function() {
         if (!masterUnlocked) {
           const intento = prompt(
-            'Introduce la contraseña maestra para mostrar las contraseñas.\n' +
-            'AVISO: esta protección es solo visual. No es segura para información sensible.'
+            'Introduce la contraseña maestra para descifrar las contraseñas.\n' +
+            'IMPORTANTE: si olvidas esta contraseña, no podrás recuperar las contraseñas cifradas.'
           );
-          if (intento === null) return;
-          if (intento === MASTER_PASSWORD) {
-            masterUnlocked = true;
-            passwordStatus.textContent = 'Contraseñas visibles (protección solo visual, no segura).';
-            passwordToggleBtn.textContent = 'Ocultar';
-            filtrar();
-          } else {
-            alert('Contraseña incorrecta.');
+          if (intento === null || intento === '') return;
+
+          if (!probarMasterPassword(intento)) {
+            alert('Contraseña maestra incorrecta para los datos actuales.');
+            return;
           }
+
+          masterPassword = intento;
+          masterUnlocked = true;
+          passwordStatus.textContent = 'Contraseñas visibles (cifrado AES; la clave maestra solo vive en esta sesión del navegador).';
+          passwordToggleBtn.textContent = 'Ocultar';
+          filtrar();
         } else {
           masterUnlocked = false;
-          passwordStatus.textContent = 'Contraseñas ocultas. Esta protección es solo visual, no es segura para datos sensibles.';
+          masterPassword = null;
+          passwordStatus.textContent = 'Contraseñas ocultas. Las contraseñas se almacenan cifradas; la clave maestra solo se usa en tu navegador.';
           passwordToggleBtn.textContent = 'Desbloquear';
           filtrar();
         }
