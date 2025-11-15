@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Cifrar contraseñas para el directorio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: "Montserrat", system-ui, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 24px;
+    }
+    .box {
+      max-width: 520px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 20px 22px;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    p {
+      font-size: 13px;
+      color: #555555;
+      margin-top: 0;
+      margin-bottom: 12px;
+    }
+    label {
+      font-size: 12px;
+      font-weight: 400;
+      display: block;
+      margin-bottom: 4px;
+    }
+    input[type="password"],
+    textarea {
+      width: 100%;
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #cccccc;
+      box-sizing: border-box;
+      margin-bottom: 10px;
+      resize: vertical;
+    }
+    button {
+      padding: 7px 14px;
+      font-size: 13px;
+      border-radius: 999px;
+      border: 1px solid #333333;
+      background: #333333;
+      color: #ffffff;
+      cursor: pointer;
+      font-family: inherit;
+      margin-bottom: 12px;
+    }
+    button:hover {
+      background: #111111;
+      border-color: #111111;
+    }
+    .hint {
+      font-size: 11px;
+      color: #777777;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Cifrar contraseñas</h1>
+    <p>
+      Usa esta herramienta para generar el valor de <strong>ContrasenasCifradas</strong> que debes pegar en tu Google Sheets.
+      Asegúrate de usar la <strong>misma contraseña maestra</strong> que luego usarás en el directorio.
+    </p>
+
+    <label for="master">Contraseña maestra (no se guardará)</label>
+    <input type="password" id="master" autocomplete="off">
+
+    <label for="plain">Contraseñas en texto plano (separadas por <code>;</code>)</label>
+    <textarea id="plain" rows="3" placeholder="Ejemplo: miClaveDian123; claveYoutube987; otraClave"></textarea>
+
+    <button id="btn-encrypt" type="button">Cifrar</button>
+
+    <label for="output">Resultado cifrado para pegar en ContrasenasCifradas</label>
+    <textarea id="output" rows="3" readonly></textarea>
+
+    <p class="hint">
+      Copia y pega íntegramente la línea resultante en la columna <strong>ContrasenasCifradas</strong> de la fila correspondiente en tu Google Sheets.
+      Si tienes 3 plataformas y 3 usuarios, deberías tener también 3 contraseñas cifradas, en el mismo orden.
+    </p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <script>
+    const masterInput = document.getElementById('master');
+    const plainInput = document.getElementById('plain');
+    const output = document.getElementById('output');
+    const btn = document.getElementById('btn-encrypt');
+
+    function encryptPasswords() {
+      const master = masterInput.value;
+      const plain = plainInput.value;
+
+      if (!master) {
+        alert('Escribe la contraseña maestra.');
+        return;
+      }
+      if (!plain.trim()) {
+        alert('Escribe al menos una contraseña en texto plano.');
+        return;
+      }
+
+      const lista = plain
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      if (lista.length === 0) {
+        alert('No se encontraron contraseñas válidas separadas por ";".');
+        return;
+      }
+
+      const cifradas = lista.map(function(pw) {
+        return CryptoJS.AES.encrypt(pw, master).toString();
+      });
+
+      output.value = cifradas.join('; ');
+    }
+
+    btn.addEventListener('click', encryptPasswords);
+  </script>
+</body>
+</html>
